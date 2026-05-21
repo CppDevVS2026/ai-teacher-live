@@ -308,8 +308,11 @@
         setStatus("error — see settings");
         return;
       }
-      // Decode the escape we did server-side: backslash-n -> newline, backslash-backslash -> backslash.
-      const chunk = data.replace(/\\n/g, "\n").replace(/\\\\/g, "\\");
+      // Decode the escape we did server-side. Single-pass replacement is required:
+      // sequential replace(/\\n/) then replace(/\\\\/) is ambiguous on "\\n" (encoded
+      // form of literal backslash-then-n), which the wrong order would decode as a
+      // newline. Match each escape unit atomically instead.
+      const chunk = data.replace(/\\(\\|n)/g, (_, c) => (c === "n" ? "\n" : "\\"));
       if (!chunk) return;
       fullReply += chunk;
       appendToBubble(teacherBubble, chunk);
