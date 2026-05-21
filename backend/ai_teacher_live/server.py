@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 
 from . import __version__
 from .llm import LLMError, chat, chat_stream
-from .persona import build_system_prompt
+from .persona import TEACHERS, build_system_prompt, get_teacher
 from .providers import api_key, current
 
 log = logging.getLogger("ai_teacher_live")
@@ -47,6 +47,7 @@ class ChatRequest(BaseModel):
     messages: list[ChatMessage] = Field(default_factory=list)
     student_name: str | None = None
     subject: str | None = None
+    persona: str | None = None
     temperature: float = 0.8
     max_tokens: int = 512
 
@@ -61,6 +62,7 @@ def _build_messages(req: ChatRequest) -> list[dict[str, str]]:
     system_prompt = build_system_prompt(
         student_name=req.student_name or "friend",
         subject=req.subject,
+        persona=req.persona,
     )
     out: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
     for m in req.messages:
@@ -88,6 +90,24 @@ async def health() -> dict[str, object]:
         "model": p.default_model,
         "base_url": p.base_url,
         "has_token": bool(api_key(p)),
+    }
+
+
+@app.get("/api/personas")
+async def personas() -> dict[str, object]:
+    """List available teacher personas."""
+    return {
+        "personas": [
+            {
+                "key": t.key,
+                "name": t.name,
+                "full_name": t.full_name,
+                "avatar": t.avatar,
+                "tagline": t.speaking_style.split(".")[0] + ".",
+            }
+            for t in TEACHERS.values()
+        ],
+        "default": get_teacher(None).key,
     }
 
 
