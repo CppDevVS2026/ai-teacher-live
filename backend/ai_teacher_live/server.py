@@ -21,8 +21,9 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from . import __version__
-from .llm import DEFAULT_MODEL, LLMError, chat, chat_stream
+from .llm import LLMError, chat, chat_stream
 from .persona import build_system_prompt
+from .providers import api_key, current
 
 log = logging.getLogger("ai_teacher_live")
 
@@ -80,10 +81,13 @@ async def root() -> dict[str, str]:
 
 @app.get("/api/health")
 async def health() -> dict[str, object]:
+    p = current()
     return {
         "ok": True,
-        "model": DEFAULT_MODEL,
-        "has_token": bool(os.environ.get("HF_TOKEN")),
+        "provider": p.name,
+        "model": p.default_model,
+        "base_url": p.base_url,
+        "has_token": bool(api_key(p)),
     }
 
 
@@ -98,7 +102,7 @@ async def api_chat(req: ChatRequest) -> ChatResponse:
         )
     except LLMError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
-    return ChatResponse(reply=reply, model=DEFAULT_MODEL)
+    return ChatResponse(reply=reply, model=current().default_model)
 
 
 @app.post("/api/chat/stream")

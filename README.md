@@ -1,11 +1,13 @@
 # ai-teacher-live — Maya, your voice-first AI tutor
 
 A live, human-feeling AI teacher. Tap the mic, talk to her, and she'll teach you
-**anything** — math, code, languages, history, music theory, you name it. Built
-on the [Hugging Face Inference API](https://huggingface.co/inference-api) for
-the language model, and the browser's [Web Speech
-API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API) for
-real-time speech-to-text and text-to-speech.
+**anything** — math, code, languages, history, music theory, you name it.
+Voice in and voice out happen in the browser via the [Web Speech
+API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API) (free,
+no API key, no audio uploads). The language model is provider-agnostic:
+any OpenAI-compatible chat-completions endpoint works
+— **Cerebras (default, free + very fast Llama 3.3 70B)**, Hugging Face, Groq,
+OpenRouter, OpenAI, or your own custom endpoint.
 
 > **Persona:** "Maya Chen" — patient, warm, Socratic. Uses analogies from
 > everyday life. Never breaks character into "as an AI…". Tuned for *spoken*
@@ -14,14 +16,14 @@ real-time speech-to-text and text-to-speech.
 ## How it works
 
 ```
-🎤 mic ─▶ Web Speech (STT) ─▶ FastAPI /api/chat/stream ─▶ HF Inference (LLM)
+🎤 mic ─▶ Web Speech (STT) ─▶ FastAPI /api/chat/stream ─▶ LLM provider
                                                               │
 🔊 speaker ◀── Web Speech (TTS) ◀── sentence-chunked stream ◀┘
 ```
 
 The browser handles voice in and voice out (free, no API key, no audio uploads).
-The backend is a thin streaming wrapper around a Hugging Face chat-completions
-endpoint, with the teacher system prompt enforced server-side.
+The backend is a thin streaming wrapper around an OpenAI-compatible chat
+completions endpoint, with the teacher system prompt enforced server-side.
 
 ## Repo layout
 
@@ -31,7 +33,8 @@ ai-teacher-live/
 │   ├── pyproject.toml
 │   └── ai_teacher_live/
 │       ├── server.py     # FastAPI app: /api/health, /api/chat, /api/chat/stream
-│       ├── llm.py        # Hugging Face Inference client (streaming + non-streaming)
+│       ├── llm.py        # OpenAI-compatible chat client (streaming + non-streaming)
+│       ├── providers.py  # Provider registry (Cerebras, HF, Groq, OpenRouter, OpenAI, custom)
 │       └── persona.py    # Teacher system prompt, tuned for voice output
 ├── frontend/
 │   ├── index.html        # Single-page app
@@ -42,15 +45,18 @@ ai-teacher-live/
 
 ## Run locally
 
-You'll need Python 3.10+, a [free Hugging Face token](https://huggingface.co/settings/tokens)
-(Read access), and a Chromium-based browser (Chrome / Edge / Brave) for the
-Web Speech API.
+You'll need Python 3.10+, an API key from one of the supported providers, and a
+Chromium-based browser (Chrome / Edge / Brave) for the Web Speech API.
 
 ```bash
 # 1) install + run the backend
 cd backend
 pip install -e .
-export HF_TOKEN="hf_xxx_your_token_here"
+
+# Pick ONE provider — Cerebras is the recommended free option.
+export CEREBRAS_API_KEY="cb_xxx_your_key"   # https://cloud.cerebras.ai
+# (or HF_TOKEN / GROQ_API_KEY / OPENROUTER_API_KEY / OPENAI_API_KEY)
+
 ai-teacher-live   # listens on http://localhost:8000
 
 # 2) serve the frontend (any static server works)
@@ -66,13 +72,33 @@ Open the gear icon in the top-right of the app, set **Backend URL** to
 
 Environment variables for the backend:
 
-| Var          | Default                                    | Notes |
-|--------------|--------------------------------------------|-------|
-| `HF_TOKEN`   | _required_                                 | Read-access token. |
-| `HF_MODEL`   | `meta-llama/Llama-3.1-8B-Instruct`         | Any chat-completions-compatible model on HF Inference Providers. |
-| `HF_BASE_URL`| `https://router.huggingface.co/v1`         | Override if you want a specific provider. |
-| `HOST`       | `0.0.0.0`                                  | uvicorn bind host. |
-| `PORT`       | `8000`                                     | uvicorn bind port. |
+| Var                 | Default                | Notes |
+|---------------------|------------------------|-------|
+| `LLM_PROVIDER`      | auto-detect            | One of `cerebras`, `groq`, `openrouter`, `openai`, `hf`, `custom`. |
+| `CEREBRAS_API_KEY`  | _required for cerebras_| Cerebras Cloud key (https://cloud.cerebras.ai). |
+| `GROQ_API_KEY`      | _required for groq_    | Groq Cloud key (https://console.groq.com). |
+| `OPENROUTER_API_KEY`| _required for openrouter_ | OpenRouter key (https://openrouter.ai). |
+| `OPENAI_API_KEY`    | _required for openai_  | OpenAI key. |
+| `HF_TOKEN`          | _required for hf_      | Hugging Face Read token. |
+| `LLM_MODEL`         | provider default       | Override the model id. |
+| `LLM_BASE_URL`      | provider default       | Override the OpenAI-compatible base URL. |
+| `LLM_API_KEY`       | (uses provider's key)  | Generic override for the auth token. |
+| `HOST`              | `0.0.0.0`              | uvicorn bind host. |
+| `PORT`              | `8000`                 | uvicorn bind port. |
+
+**Auto-detect order:** if `LLM_PROVIDER` is unset, the server picks the first
+provider whose API key env var is present, in this order: `cerebras`, `groq`,
+`openrouter`, `openai`, `hf`.
+
+**Default models (good starting points):**
+
+| Provider     | Default model                              |
+|--------------|--------------------------------------------|
+| `cerebras`   | `llama-3.3-70b`                            |
+| `groq`       | `llama-3.3-70b-versatile`                  |
+| `openrouter` | `meta-llama/llama-3.1-8b-instruct:free`    |
+| `openai`     | `gpt-4o-mini`                              |
+| `hf`         | `meta-llama/Llama-3.1-8B-Instruct`         |
 
 Frontend settings (saved to `localStorage`):
 
@@ -88,8 +114,8 @@ Frontend settings (saved to `localStorage`):
   ```bash
   # From the repo root, with the Devin deploy tool:
   #   deploy({ command: "backend", dir: "/path/to/ai-teacher-live/backend" })
-  # Then set HF_TOKEN as a Fly secret:
-  flyctl secrets set HF_TOKEN=hf_xxx
+  # Then set your provider key as a Fly secret, e.g.:
+  flyctl secrets set CEREBRAS_API_KEY=cb_xxx
   ```
 - **Frontend (any static host):** the `frontend/` directory is fully static — drop it on devinapps, Cloudflare Pages, Netlify, Vercel, GitHub Pages, etc.
 

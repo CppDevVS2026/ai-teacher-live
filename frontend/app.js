@@ -230,7 +230,9 @@
       const r = await fetch(endpoint("/api/health"), { method: "GET" });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const j = await r.json();
-      modelLabel.textContent = `model: ${j.model || "?"}${j.has_token ? "" : " (no HF_TOKEN!)"}`;
+      const tokenWarn = j.has_token ? "" : " (no api key!)";
+      const provider = j.provider ? `${j.provider}: ` : "";
+      modelLabel.textContent = `model: ${provider}${j.model || "?"}${tokenWarn}`;
     } catch (e) {
       modelLabel.textContent = `model: (backend unreachable)`;
     }
