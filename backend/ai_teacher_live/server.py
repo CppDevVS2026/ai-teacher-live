@@ -125,7 +125,7 @@ async def api_chat_stream(req: ChatRequest) -> StreamingResponse:
                 await asyncio.sleep(0)
             yield b"event: done\ndata: [DONE]\n\n"
         except LLMError as e:
-            payload = str(e).replace("\n", " ")
+            payload = str(e).replace("\r", " ").replace("\n", " ")
             yield f"event: error\ndata: {payload}\n\n".encode()
 
     return StreamingResponse(gen(), media_type="text/event-stream")

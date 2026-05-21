@@ -32,8 +32,13 @@
   const defaultBackend = (() => {
     // Prefer same-origin if served from a real host; otherwise localhost dev default.
     const { protocol, host, hostname } = window.location;
-    if (hostname && hostname !== "" && !hostname.endsWith(".devinapps.com")) {
-      // If we're on a real domain (not a static preview), assume the backend is co-located.
+    if (
+      hostname &&
+      hostname !== "localhost" &&
+      hostname !== "127.0.0.1" &&
+      !hostname.endsWith(".devinapps.com")
+    ) {
+      // If we're on a real domain (not localhost/preview), assume the backend is co-located.
       return `${protocol}//${host}`;
     }
     return "http://localhost:8000";
@@ -124,7 +129,7 @@
   let speaking = false;
   let listening = false;
   let pendingSpeak = "";
-  let lastUserActivity = Date.now();
+  let currentAbort = null;
 
   function refreshFooter() {
     backendLabel.textContent = `backend: ${settings.backendUrl || "(unset)"}`;
@@ -245,15 +250,18 @@
     pendingSpeak = "";
 
     let fullReply = "";
+    const abort = new AbortController();
+    currentAbort = abort;
     try {
       const resp = await fetch(endpoint("/api/chat/stream"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: history,
+          messages: history.slice(-20),
           student_name: settings.studentName || undefined,
           subject: settings.subject || undefined,
         }),
+        signal: abort.signal,
       });
       if (!resp.ok || !resp.body) {
         const text = await resp.text().catch(() => `HTTP ${resp.status}`);
@@ -277,9 +285,12 @@
       // Flush any trailing event.
       if (buf.trim()) handleSSE(buf);
     } catch (e) {
+      if (e.name === "AbortError") return;
       addBubble("teacher", `Maya couldn't reach the backend: ${e.message}`, { error: true });
       setStatus("offline — check Backend URL in settings");
       return;
+    } finally {
+      if (currentAbort === abort) currentAbort = null;
     }
 
     // Flush remaining text to TTS.
@@ -364,7 +375,7 @@
         const p = interimBubble.querySelector("p");
         p.textContent = interimText || "…";
       }
-      lastUserActivity = Date.now();
+
     };
     r.onerror = (ev) => {
       recognizing = false;
@@ -432,6 +443,7 @@
     stopListening();
     cancelSpeech();
     sayQueue.length = 0;
+    if (currentAbort) currentAbort.abort();
     setStatus("stopped — tap the mic when you're ready");
   });
   textInput.addEventListener("keydown", (ev) => {
