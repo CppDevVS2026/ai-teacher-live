@@ -89,9 +89,9 @@ async def chat_stream(
     async with _build_client(provider) as c:
         async with c.stream("POST", "/chat/completions", json=payload) as resp:
             if resp.status_code >= 400:
-                body = await resp.aread()
+                body = (await resp.aread()).decode(errors="replace")
                 raise LLMError(
-                    f"{provider.name} error {resp.status_code}: {body[:500]!r}"
+                    f"{provider.name} error {resp.status_code}: {body[:500]}"
                 )
             async for line in resp.aiter_lines():
                 if not line or not line.startswith("data:"):

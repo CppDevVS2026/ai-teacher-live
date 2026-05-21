@@ -43,7 +43,8 @@ def main() -> int:
     health = get("/api/health")
     print(f"[smoke] /api/health -> {health}")
     if not health.get("has_token"):
-        print("[smoke] HF_TOKEN not set on the backend; skipping live chat call.")
+        provider = health.get("provider", "unknown")
+        print(f"[smoke] No API key for provider {provider!r}; skipping live chat call.")
         return 0
 
     print("[smoke] POST /api/chat ...")
